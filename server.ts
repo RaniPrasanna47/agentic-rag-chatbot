@@ -5,9 +5,10 @@ import multer from "multer";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const pdfParseModule = require("pdf-parse");
+import * as pdfParseModule from "pdf-parse";
+//import { createRequire } from "module";
+//const require = createRequire(import.meta.url);
+//const pdfParseModule = require("pdf-parse");
 
 dotenv.config();
 
