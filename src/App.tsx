@@ -223,8 +223,18 @@ export default function App() {
         setCurrentSessionId(fetchedSessions[0].id);
       }
     }, (error) => {
-      console.error("Sessions onSnapshot error (handled):", error);
-      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/sessions`);
+      console.warn("Sessions onSnapshot error, falling back to local sessions list:", error);
+      try {
+        const key = `rag_sessions_${user.uid}`;
+        const stored = localStorage.getItem(key);
+        const fetchedSessions: ChatSession[] = stored ? JSON.parse(stored) : [];
+        setSessions(fetchedSessions);
+        if (fetchedSessions.length > 0 && !currentSessionId) {
+          setCurrentSessionId(fetchedSessions[0].id);
+        }
+      } catch (err) {
+        console.error("Error loading fallback sessions:", err);
+      }
     });
 
     return () => unsubscribe();
@@ -237,7 +247,7 @@ export default function App() {
       return;
     }
 
-    if (user.uid.startsWith("guest_")) {
+    if (user.uid.startsWith("guest_") || currentSessionId.startsWith("session_")) {
       const loadLocalMessages = () => {
         try {
           const key = `rag_messages_${user.uid}_${currentSessionId}`;
@@ -270,8 +280,14 @@ export default function App() {
       });
       setMessages(fetchedMessages);
     }, (error) => {
-      console.error("Messages onSnapshot error (handled):", error);
-      handleFirestoreError(error, OperationType.GET, `users/${user.uid}/sessions/${currentSessionId}/messages`);
+      console.warn("Messages onSnapshot error, loading from local fallback storage:", error);
+      try {
+        const key = `rag_messages_${user.uid}_${currentSessionId}`;
+        const stored = localStorage.getItem(key);
+        setMessages(stored ? JSON.parse(stored) : []);
+      } catch (err) {
+        console.error("Error loading local fallback messages:", err);
+      }
     });
 
     return () => unsubscribe();
@@ -308,8 +324,13 @@ export default function App() {
 
       setCurrentSessionId(newSessionDoc.id);
     } catch (err) {
-      console.error("Error creating session:", err);
-      handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}/sessions`);
+      console.warn("Firestore sessions write failed, falling back to local memory storage:", err);
+      // Fallback local session
+      const key = `rag_sessions_${user.uid}`;
+      const updatedSessions = [newSession, ...sessions];
+      localStorage.setItem(key, JSON.stringify(updatedSessions));
+      setSessions(updatedSessions);
+      setCurrentSessionId(newSessionId);
     }
   };
 
@@ -337,8 +358,12 @@ export default function App() {
         setCurrentSessionId(null);
       }
     } catch (err) {
-      console.error("Error deleting session:", err);
-      handleFirestoreError(err, OperationType.DELETE, `users/${user.uid}/sessions/${sessionId}`);
+      console.warn("Firestore delete session failed, deleting locally:", err);
+      const remaining = sessions.filter(s => s.id !== sessionId);
+      setSessions(remaining);
+      if (currentSessionId === sessionId) {
+        setCurrentSessionId(remaining.length > 0 ? remaining[0].id : null);
+      }
     }
   };
 
@@ -364,11 +389,28 @@ export default function App() {
         });
         localStorage.setItem(key, JSON.stringify(updatedSessions));
         setSessions(updatedSessions);
+      } else if (currentSessionId.startsWith("session_")) {
+        // Fallback Local Session
+        const key = `rag_sessions_${user.uid}`;
+        const updatedSessions = sessions.map(s => {
+          if (s.id === currentSessionId) {
+            return { ...s, selectedDocuments: activeNames };
+          }
+          return s;
+        });
+        localStorage.setItem(key, JSON.stringify(updatedSessions));
+        setSessions(updatedSessions);
       } else {
         const sessionDocRef = doc(db, "users", user.uid, "sessions", currentSessionId);
         updateDoc(sessionDocRef, { selectedDocuments: activeNames }).catch(err => {
-          console.error("Error updating session documents:", err);
-          handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}/sessions/${currentSessionId}`);
+          console.warn("Firestore update session documents failed, fallback to local:", err);
+          const updatedSessions = sessions.map(s => {
+            if (s.id === currentSessionId) {
+              return { ...s, selectedDocuments: activeNames };
+            }
+            return s;
+          });
+          setSessions(updatedSessions);
         });
       }
     }
@@ -404,6 +446,7 @@ export default function App() {
     if (!user) return;
 
     let activeSessionId = currentSessionId;
+    let isLocalSessionFallback = activeSessionId ? activeSessionId.startsWith("session_") : false;
 
     if (!activeSessionId) {
       // Create session first!
@@ -422,6 +465,7 @@ export default function App() {
         setSessions(updated);
         setCurrentSessionId(newSessionId);
         activeSessionId = newSessionId;
+        isLocalSessionFallback = true;
       } else {
         try {
           const sessionsRef = collection(db, "users", user.uid, "sessions");
@@ -432,10 +476,15 @@ export default function App() {
           });
           setCurrentSessionId(newDoc.id);
           activeSessionId = newDoc.id;
+          isLocalSessionFallback = false;
         } catch (err) {
-          console.error("Error creating auto session in Firestore:", err);
-          handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}/sessions`);
-          return;
+          console.warn("Firestore create auto-session failed, falling back to local memory storage:", err);
+          const updated = [newSession, ...sessions];
+          localStorage.setItem(`rag_sessions_${user.uid}`, JSON.stringify(updated));
+          setSessions(updated);
+          setCurrentSessionId(newSessionId);
+          activeSessionId = newSessionId;
+          isLocalSessionFallback = true;
         }
       }
     }
@@ -453,11 +502,16 @@ export default function App() {
       thoughts: []
     };
 
-    if (user.uid.startsWith("guest_")) {
+    // Optimistically update local messages so the user always sees their question immediately!
+    setMessages(prev => [...prev, userMsgData]);
+
+    if (user.uid.startsWith("guest_") || isLocalSessionFallback) {
       const key = `rag_messages_${user.uid}_${activeSessionId}`;
-      const updatedMsgs = [...messages, userMsgData];
+      // Read most up-to-date messages
+      const stored = localStorage.getItem(key);
+      const currentMsgs = stored ? JSON.parse(stored) : [];
+      const updatedMsgs = [...currentMsgs, userMsgData];
       localStorage.setItem(key, JSON.stringify(updatedMsgs));
-      setMessages(updatedMsgs);
     } else {
       try {
         const messagesRef = collection(db, "users", user.uid, "sessions", activeSessionId, "messages");
@@ -468,8 +522,7 @@ export default function App() {
           selectedFiles: userMsgData.selectedFiles
         });
       } catch (err) {
-        console.error("Error writing user message to Firestore:", err);
-        handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}/sessions/${activeSessionId}/messages`);
+        console.warn("Firestore write user message failed, falling back to local in-memory state:", err);
       }
     }
 
@@ -549,7 +602,7 @@ export default function App() {
         selectedFiles: data.selectedFiles || []
       };
 
-      if (user.uid.startsWith("guest_")) {
+      if (user.uid.startsWith("guest_") || isLocalSessionFallback) {
         const key = `rag_messages_${user.uid}_${activeSessionId}`;
         const storedMsgsKey = localStorage.getItem(key);
         const currentMsgs = storedMsgsKey ? JSON.parse(storedMsgsKey) : [];
@@ -561,8 +614,8 @@ export default function App() {
           const messagesRef = collection(db, "users", user.uid, "sessions", activeSessionId, "messages");
           await addDoc(messagesRef, assistantMsgData);
         } catch (err) {
-          console.error("Error writing assistant message to Firestore:", err);
-          handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}/sessions/${activeSessionId}/messages`);
+          console.warn("Firestore write assistant message failed, fallback to local in-memory state:", err);
+          setMessages(prev => [...prev, { id: assistantMsgId, ...assistantMsgData }]);
         }
       }
 
@@ -581,7 +634,7 @@ export default function App() {
         selectedFiles: []
       };
 
-      if (user.uid.startsWith("guest_")) {
+      if (user.uid.startsWith("guest_") || isLocalSessionFallback) {
         const key = `rag_messages_${user.uid}_${activeSessionId}`;
         const storedMsgsKey = localStorage.getItem(key);
         const currentMsgs = storedMsgsKey ? JSON.parse(storedMsgsKey) : [];
@@ -593,8 +646,8 @@ export default function App() {
           const messagesRef = collection(db, "users", user.uid, "sessions", activeSessionId, "messages");
           await addDoc(messagesRef, errorMsgData);
         } catch (err) {
-          console.error("Error writing error message to Firestore:", err);
-          handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}/sessions/${activeSessionId}/messages`);
+          console.warn("Firestore write error message failed, fallback to local in-memory state:", err);
+          setMessages(prev => [...prev, { id: errorMsgId, ...errorMsgData }]);
         }
       }
     } finally {
