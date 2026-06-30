@@ -1,6 +1,6 @@
 # Agentic RAG Assistant - PDF Chat & Knowledge Mind-Map
 
-A production-ready, full-stack, responsive **Agentic Retrieval-Augmented Generation (RAG)** web application. Users can upload various knowledge bases (such as PDFs, Text documents, and Markdown files), manage multiple threads synced securely with **Firebase**, and engage in semantic conversation powered by **Gemini 3.5 Flash** with intelligent automated fallback mechanics.
+A production-ready, full-stack, responsive **Agentic Retrieval-Augmented Generation (RAG)** web application. Users can upload various knowledge bases (such as PDFs, Text documents, and Markdown files), manage multiple threads synced securely with **Firebase**, and engage in semantic conversation with intelligent automated fallback mechanics.
 
 ---
 
