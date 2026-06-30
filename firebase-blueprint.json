@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "A user's chat session in GraphRAG",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Title of the chat session"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "selectedDocuments": {
+          "type": "array",
+          "description": "Selected documents for the session"
+        }
+      },
+      "required": ["title", "createdAt", "selectedDocuments"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message within a session",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["user", "assistant"],
+          "description": "Role of the message author"
+        },
+        "content": {
+          "type": "string",
+          "description": "The textual body of the message"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the message was created"
+        },
+        "thoughts": {
+          "type": "array",
+          "description": "Chain of thoughts for assistant messages"
+        },
+        "selectedFiles": {
+          "type": "array",
+          "description": "The document list selected at the time of user prompt"
+        }
+      },
+      "required": ["role", "content", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}/sessions/{sessionId}": {
+      "schema": "ChatSession",
+      "description": "Collection of user chat sessions"
+    },
+    "users/{userId}/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Collection of messages within a session"
+    }
+  }
+}

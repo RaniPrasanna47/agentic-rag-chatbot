@@ -1,0 +1,6 @@
+{
+  "name": "Agentic RAG Chatbot",
+  "description": "An advanced Agentic RAG chatbot built with a LangGraph-style state machine, Gemini Embeddings, Pinecone, and Firebase Auth.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

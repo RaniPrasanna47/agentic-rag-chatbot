@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global authorization and validation helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSession(data) {
+      return data.keys().hasAll(['title', 'createdAt', 'selectedDocuments'])
+          && data.keys().size() == 3
+          && data.title is string && data.title.size() <= 256
+          && data.createdAt is string && data.createdAt.size() <= 40
+          && data.selectedDocuments is list;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['role', 'content', 'timestamp'])
+          && data.role is string && (data.role == 'user' || data.role == 'assistant')
+          && data.content is string && data.content.size() <= 100000
+          && data.timestamp is string && data.timestamp.size() <= 40;
+    }
+
+    // Main user path rules
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+
+      match /sessions/{sessionId} {
+        allow create: if isOwner(userId)
+          && isValidId(sessionId)
+          && isValidSession(request.resource.data);
+
+        allow read, list: if isOwner(userId);
+
+        allow update: if isOwner(userId)
+          && isValidSession(request.resource.data);
+
+        allow delete: if isOwner(userId);
+
+        match /messages/{messageId} {
+          allow create: if isOwner(userId)
+            && isValidId(messageId)
+            && isValidMessage(request.resource.data);
+
+          allow read, list: if isOwner(userId);
+        }
+      }
+    }
+  }
+}
